@@ -60,6 +60,7 @@ class PoetryDataModule(pl.LightningDataModule):
         batch_size: int,
         seq_length: int,
         val_split: float,
+        test_split: float,
         num_workers: int = 0,
     ) -> None:
         super().__init__()
@@ -67,13 +68,18 @@ class PoetryDataModule(pl.LightningDataModule):
             raise ValueError("batch_size must be positive")
         if seq_length <= 1:
             raise ValueError("seq_length must be greater than 1")
-        if not 0 <= val_split < 1:
-            raise ValueError("val_split must be in the range [0, 1)")
+        if not 0 < val_split < 1:
+            raise ValueError("val_split must be in the range (0, 1)")
+        if not 0 < test_split < 1:
+            raise ValueError("test_split must be in the range (0, 1)")
+        if val_split + test_split >= 1:
+            raise ValueError("The sum of val_split and test_split must be < 1")
 
         self.data_path = data_path
         self.batch_size = batch_size
         self.seq_length = seq_length
         self.val_split = val_split
+        self.test_split = test_split
         self.num_workers = num_workers
 
         self._vocab: list[str] = []
@@ -81,6 +87,7 @@ class PoetryDataModule(pl.LightningDataModule):
         self._ix_to_char: Dict[int, str] = {}
         self._train_dataset: Optional[Dataset[tuple[torch.Tensor, torch.Tensor]]] = None
         self._val_dataset: Optional[Dataset[tuple[torch.Tensor, torch.Tensor]]] = None
+        self._test_dataset: Optional[Dataset[tuple[torch.Tensor, torch.Tensor]]] = None
 
     def prepare_data(self) -> None:  # pragma: no cover - filesystem check
         path = Path(self.data_path)
@@ -108,17 +115,21 @@ class PoetryDataModule(pl.LightningDataModule):
 
         dataset_len = len(full_dataset)
         val_size = int(dataset_len * self.val_split)
-        if val_size == 0 and self.val_split > 0:
+        test_size = int(dataset_len * self.test_split)
+        if val_size == 0:
             val_size = 1
-        train_size = dataset_len - val_size
+        if test_size == 0:
+            test_size = 1
+        train_size = dataset_len - val_size - test_size
         if train_size <= 0:
-            raise ValueError("Validation split too large for dataset size")
+            raise ValueError("Validation/Test split too large for dataset size")
 
-        self._train_dataset, self._val_dataset = random_split(
+        splits = random_split(
             full_dataset,
-            lengths=[train_size, val_size],
+            lengths=[train_size, val_size, test_size],
             generator=torch.Generator().manual_seed(42),
         )
+        self._train_dataset, self._val_dataset, self._test_dataset = splits
 
     @property
     def vocab(self) -> list[str]:
@@ -153,6 +164,19 @@ class PoetryDataModule(pl.LightningDataModule):
             )
         return DataLoader(
             self._val_dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            drop_last=False,
+            num_workers=self.num_workers,
+        )
+
+    def test_dataloader(self) -> DataLoader:
+        if self._test_dataset is None:
+            raise RuntimeError(
+                "DataModule must be set up before requesting dataloaders",
+            )
+        return DataLoader(
+            self._test_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             drop_last=False,

@@ -1,0 +1,6 @@
+name: step_lr
+params:
+  step_size: 10
+  gamma: 0.1
+interval: epoch
+frequency: 1

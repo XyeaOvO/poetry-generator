@@ -1,0 +1,6 @@
+name: cosine_annealing
+params:
+  T_max: 10
+  eta_min: 0.0
+interval: epoch
+frequency: 1

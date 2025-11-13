@@ -12,6 +12,9 @@
 - **主题引导**：给定任意标题或句子，模型将围绕其意境进行续写。
 - **藏头诗**：按指定汉字生成整齐的藏头诗。
 - **现代化工具链**：Hydra、WandB、Mamba、Ruff、Pre-commit 提升研发效率。
+- **精细化评估**：自动划分训练/验证/测试集，并在 WandB & Lightning 日志中记录 loss 与 perplexity 指标。
+- **定性分析**：每轮验证/测试结束后由 W&B Table 记录多条提示的生成样例，方便跨周期对比模型风格。
+- **灵活调度**：通过 Hydra 的 `scheduler` 配置切换 StepLR、Cosine 等学习率调度策略，免改代码即可实验。
 - **高度可复现**：清晰的脚本与配置，所有产物集中保存在 `outputs/` 目录下。
 
 ## 🚀 快速开始
@@ -23,6 +26,7 @@
 ```bash
 mamba env create -f environment.yml
 mamba activate poetry-generator
+pip install -e .
 pre-commit install
 ```
 
@@ -46,6 +50,10 @@ Hydra 运行目录中将包含：
 
 - `checkpoints/best-model.ckpt`：验证损失最低的权重
 - `vocab.json`：训练得到的词汇映射，可供推理脚本复用
+- `wandb/`：离线 WandB 日志（包含 train/val/test loss 与 perplexity）
+- `samples/*`：WandB Table 中记录的多提示定性示例，可与数值指标一起分析
+
+训练完成后脚本会自动运行一次 `trainer.test(ckpt_path="best")`，在独立测试集上记录 `test_loss` 与 `test_ppl`，确保评估闭环。
 
 ### 4. 超参数搜索（WandB Sweeps）
 
@@ -95,18 +103,23 @@ python -m poetry_generator.pipelines.generate \
 ## ⚙️ 配置说明
 
 - `conf/config.yaml`：主配置；`project_name`、`run_name` 用于 WandB 与 Hydra 命名。
-- `conf/data/poetry.yaml`：数据路径、批大小、序列长度、验证集划分。
-- `conf/model/*.yaml`：模型结构与学习率。可创建更多文件以扩展架构。
+- `conf/data/poetry.yaml`：数据路径、批大小、序列长度、验证/测试集划分。
+- `conf/model/*.yaml`：拆分为 `module`（LightningModule 的构造参数）与 `samples`（定性采样参数），可通过 Hydra 复用或扩展不同结构与提示集合。
 - `conf/trainer/default.yaml`：Lightning Trainer 参数，如 `max_epochs`、`precision`、`devices` 等。
+- `conf/scheduler/*.yaml`：学习率调度策略。默认为 `scheduler=none`，也可以切换为 `scheduler=step`、`scheduler=cosine` 等，并通过 `scheduler.params.*` 自由覆盖。
+- `conf/callbacks/*.yaml`：Hydra 可实例化的回调配置，默认会注册生成样例表格；可以通过 `callbacks=your_callbacks` 切换或扩展更多回调。
 
 通过 Hydra CLI 可以覆盖任意字段，例如：
 
 ```bash
 python -m poetry_generator.pipelines.train \
   model=lstm \
-  model.hidden_dim=512 \
+  model.module.hidden_dim=512 \
   data.seq_length=64 \
-  trainer.max_epochs=30
+  data.test_split=0.1 \
+  trainer.max_epochs=30 \
+  scheduler=step \
+  scheduler.params.step_size=5
 ```
 
 ## 📁 项目结构

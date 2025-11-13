@@ -11,3 +11,4 @@ dist/
 outputs/
 wandb/
 .DS_Store
+.conda_pkgs/*

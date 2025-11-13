@@ -1,6 +1,14 @@
 name: lstm
-model_type: lstm
-embedding_dim: 128
-hidden_dim: 256
-n_layers: 2
-learning_rate: 0.001
+module:
+  _target_: poetry_generator.models.PoetryLightningModel
+  model_type: lstm
+  embedding_dim: 128
+  hidden_dim: 256
+  n_layers: 2
+  learning_rate: 0.001
+samples:
+  prompts:
+    - "春江花月夜"
+    - "人工智能"
+  max_len: 64
+  temperature: 0.9
