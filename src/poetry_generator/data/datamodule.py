@@ -61,7 +61,7 @@ class PoetryDataModule(pl.LightningDataModule):
         seq_length: int,
         val_split: float,
         test_split: float,
-        num_workers: int = 0,
+        num_workers: int = 20,
     ) -> None:
         super().__init__()
         if batch_size <= 0:
@@ -155,6 +155,8 @@ class PoetryDataModule(pl.LightningDataModule):
             shuffle=True,
             drop_last=True,
             num_workers=self.num_workers,
+            pin_memory=True,
+            persistent_workers=True,
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -168,6 +170,8 @@ class PoetryDataModule(pl.LightningDataModule):
             shuffle=False,
             drop_last=False,
             num_workers=self.num_workers,
+            pin_memory=True,
+            persistent_workers=True,
         )
 
     def test_dataloader(self) -> DataLoader:
@@ -181,4 +185,6 @@ class PoetryDataModule(pl.LightningDataModule):
             shuffle=False,
             drop_last=False,
             num_workers=self.num_workers,
+            pin_memory=True,
+            persistent_workers=True,
         )

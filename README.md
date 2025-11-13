@@ -107,7 +107,8 @@ python -m poetry_generator.pipelines.generate \
 - `conf/model/*.yaml`：拆分为 `module`（LightningModule 的构造参数）与 `samples`（定性采样参数），可通过 Hydra 复用或扩展不同结构与提示集合。
 - `conf/trainer/default.yaml`：Lightning Trainer 参数，如 `max_epochs`、`precision`、`devices` 等。
 - `conf/scheduler/*.yaml`：学习率调度策略。默认为 `scheduler=none`，也可以切换为 `scheduler=step`、`scheduler=cosine` 等，并通过 `scheduler.params.*` 自由覆盖。
-- `conf/callbacks/*.yaml`：Hydra 可实例化的回调配置，默认会注册生成样例表格；可以通过 `callbacks=your_callbacks` 切换或扩展更多回调。
+- `conf/callbacks/*.yaml`：Hydra 可实例化的回调配置；默认包含词汇表保存、生成样例、ModelCheckpoint 与 LearningRateMonitor。可通过 `callbacks=xxx` 切换或扩展。
+- `conf/logger/*.yaml`：Logger 配置（默认 `logger=wandb`），可自由换成 TensorBoard 等其它记录器。
 
 通过 Hydra CLI 可以覆盖任意字段，例如：
 
@@ -119,7 +120,9 @@ python -m poetry_generator.pipelines.train \
   data.test_split=0.1 \
   trainer.max_epochs=30 \
   scheduler=step \
-  scheduler.params.step_size=5
+  scheduler.params.step_size=5 \
+  callbacks=default \
+  logger=wandb
 ```
 
 ## 📁 项目结构
@@ -128,11 +131,19 @@ python -m poetry_generator.pipelines.train \
 poetry-generator/
 ├── conf/
 │   ├── config.yaml
+│   ├── callbacks/
+│   │   └── default.yaml
 │   ├── data/
 │   │   └── poetry.yaml
+│   ├── logger/
+│   │   └── wandb.yaml
 │   ├── model/
 │   │   ├── lstm.yaml
 │   │   └── rnn.yaml
+│   ├── scheduler/
+│   │   ├── cosine.yaml
+│   │   ├── none.yaml
+│   │   └── step.yaml
 │   └── trainer/
 │       └── default.yaml
 ├── data/
@@ -148,6 +159,10 @@ poetry-generator/
 │   │   ├── __init__.py
 │   │   ├── core.py
 │   │   └── lightning.py
+│   └── callbacks/
+│       ├── __init__.py
+│       ├── generation.py
+│       └── save_vocab.py
 │   └── pipelines/
 │       ├── __init__.py
 │       ├── generate.py
@@ -165,11 +180,5 @@ poetry-generator/
 1. **Ruff & Formatting**：提交前运行 `ruff check . --fix && ruff format .`。
 2. **Pre-commit**：首次克隆后执行 `pre-commit install`，确保提交前自动校验。
 3. **Git 工作流**：在新分支中进行开发（如 `feature/add-generator-cli`），并采用 Conventional Commits（如 `feat(model): add lstm config`）。
-
-## 🧪 未来扩展建议
-
-- 引入更复杂的注意力机制或 Transformer 架构。
-- 增加多语种或多风格数据集。
-- 结合前端界面，提供交互式诗歌体验。
 
 祝你创作愉快！
