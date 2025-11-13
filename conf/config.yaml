@@ -1,0 +1,15 @@
+defaults:
+  - data: poetry
+  - model: lstm
+  - trainer: default
+  - _self_
+
+project_name: "poetry-generator"
+run_name: "${model.name}-h${model.hidden_dim}-s${data.seq_length}"
+
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}

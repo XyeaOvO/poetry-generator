@@ -1,0 +1,6 @@
+name: rnn
+model_type: rnn
+embedding_dim: 128
+hidden_dim: 256
+n_layers: 2
+learning_rate: 0.001

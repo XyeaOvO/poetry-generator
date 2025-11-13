@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=67"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "poetry-generator"
+version = "0.1.0"
+description = "AI Poetry Generator using PyTorch Lightning"
+authors = [{name = "Project Author"}]
+requires-python = ">=3.10"
+dependencies = [
+  "torch",
+  "pytorch-lightning",
+  "hydra-core",
+  "wandb",
+]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F"]
+
+[tool.ruff.format]
+quote-style = "double"

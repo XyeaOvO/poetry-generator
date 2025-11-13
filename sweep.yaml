@@ -1,0 +1,22 @@
+program: src/poetry_generator/pipelines/train.py
+method: bayes
+metric:
+  name: val_loss
+  goal: minimize
+parameters:
+  model:
+    parameters:
+      name:
+        values: ["lstm", "rnn"]
+      learning_rate:
+        distribution: uniform
+        min: 0.0001
+        max: 0.01
+      hidden_dim:
+        values: [128, 256, 512]
+      n_layers:
+        values: [2, 3]
+  data:
+    parameters:
+      seq_length:
+        values: [32, 48, 64]
