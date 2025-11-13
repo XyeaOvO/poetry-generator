@@ -4,7 +4,7 @@ defaults:
   - trainer: default
   - callbacks@callbacks: default
   - logger: wandb
-  - scheduler: none
+  - scheduler: cosine
   - _self_
 
 project_name: "poetry-generator"
