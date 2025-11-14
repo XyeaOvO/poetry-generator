@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hydra
+import torch
 import pytorch_lightning as pl
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate, to_absolute_path
@@ -10,6 +11,7 @@ from omegaconf import DictConfig, OmegaConf
 @hydra.main(config_path="../../../conf", config_name="config.yaml", version_base=None)
 def main(cfg: DictConfig) -> None:
     pl.seed_everything(42, workers=True)
+    torch.set_float32_matmul_precision("medium")
 
     abs_data_path = to_absolute_path(str(cfg.data.data_path))
     data_module = instantiate(cfg.data, data_path=abs_data_path)
@@ -17,8 +19,7 @@ def main(cfg: DictConfig) -> None:
 
     vocab_mapping = data_module.vocab_mapping()
     idx_to_char = [
-        vocab_mapping.ix_to_char.get(i, "")
-        for i in range(len(vocab_mapping.vocab))
+        vocab_mapping.ix_to_char.get(i, "") for i in range(len(vocab_mapping.vocab))
     ]
 
     model_cfg = cfg.model.module
@@ -32,6 +33,7 @@ def main(cfg: DictConfig) -> None:
         char_to_ix=vocab_mapping.char_to_ix,
         scheduler_cfg=scheduler_cfg,
     )
+    model = torch.compile(model, mode="max-autotune")
 
     wandb_logger = instantiate(cfg.logger)
 

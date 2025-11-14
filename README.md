@@ -104,7 +104,7 @@ python -m poetry_generator.pipelines.generate \
 
 - `conf/config.yaml`：主配置；`project_name`、`run_name` 用于 WandB 与 Hydra 命名。
 - `conf/data/poetry.yaml`：数据路径、批大小、序列长度、验证/测试集划分。
-- `conf/model/*.yaml`：拆分为 `module`（LightningModule 的构造参数）与 `samples`（定性采样参数），可通过 Hydra 复用或扩展不同结构与提示集合。
+- `conf/model/*.yaml`：拆分为 `module`（LightningModule 的构造参数，如 `learning_rate` 与 `weight_decay` 等超参数）与 `samples`（定性采样参数），可通过 Hydra 复用或扩展不同结构与提示集合。
 - `conf/trainer/default.yaml`：Lightning Trainer 参数，如 `max_epochs`、`precision`、`devices` 等。
 - `conf/scheduler/*.yaml`：学习率调度策略。默认为 `scheduler=none`，也可以切换为 `scheduler=step`、`scheduler=cosine` 等，并通过 `scheduler.params.*` 自由覆盖。
 - `conf/callbacks/*.yaml`：Hydra 可实例化的回调配置；默认包含词汇表保存、生成样例、ModelCheckpoint 与 LearningRateMonitor。可通过 `callbacks=xxx` 切换或扩展。
@@ -116,6 +116,7 @@ python -m poetry_generator.pipelines.generate \
 python -m poetry_generator.pipelines.train \
   model=lstm \
   model.module.hidden_dim=512 \
+  model.module.weight_decay=1e-4 \
   data.seq_length=64 \
   data.test_split=0.1 \
   trainer.max_epochs=30 \

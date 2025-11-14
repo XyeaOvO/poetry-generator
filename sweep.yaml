@@ -1,7 +1,9 @@
-program: src/poetry_generator/pipelines/train.py
+program: scripts/wandb_hydra_wrapper.py
+name: Test
+project: poetry-generator
 method: bayes
 metric:
-  name: val_loss
+  name: val/loss
   goal: minimize
 parameters:
   model:
@@ -9,9 +11,15 @@ parameters:
       name:
         values: ["lstm", "rnn"]
       learning_rate:
-        distribution: uniform
+        distribution: log_uniform_values
         min: 0.0001
         max: 0.01
+      weight_decay:
+        distribution: log_uniform_values
+        min: 1.0e-6
+        max: 1.0e-2
+      embedding_dim:
+        values: [128, 256, 512]
       hidden_dim:
         values: [128, 256, 512]
       n_layers:
@@ -19,4 +27,9 @@ parameters:
   data:
     parameters:
       seq_length:
-        values: [32, 48, 64]
+        values: [48, 64, 96]
+
+early_terminate:
+  type: hyperband
+  min_iter: 2
+  eta: 3

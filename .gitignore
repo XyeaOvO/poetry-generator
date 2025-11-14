@@ -12,3 +12,6 @@ outputs/
 wandb/
 .DS_Store
 .conda_pkgs/*
+.serena/
+.cache/
+.ruff_cache/

@@ -21,6 +21,7 @@ class PoetryLightningModel(pl.LightningModule):
         hidden_dim: int,
         n_layers: int,
         learning_rate: float,
+        weight_decay: float = 0.0,
         idx_to_char: List[str] | None = None,
         char_to_ix: Dict[str, int] | None = None,
         scheduler_cfg: Dict[str, object] | None = None,
@@ -28,6 +29,8 @@ class PoetryLightningModel(pl.LightningModule):
         super().__init__()
         if learning_rate <= 0:
             raise ValueError("learning_rate must be positive")
+        if weight_decay < 0:
+            raise ValueError("weight_decay must be non-negative")
         self.save_hyperparameters(ignore=["idx_to_char", "char_to_ix"])
 
         self.model = PoetryCoreModel(
@@ -77,7 +80,11 @@ class PoetryLightningModel(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams.learning_rate)
+        optimizer = torch.optim.AdamW(
+            self.parameters(),
+            lr=self.hparams.learning_rate,
+            weight_decay=self.hparams.weight_decay,
+        )
         scheduler_cfg = self.scheduler_cfg or {}
         scheduler_name = (scheduler_cfg.get("name") or "none").lower()
 
@@ -215,15 +222,7 @@ class PoetryLightningModel(pl.LightningModule):
 
         if name in {"step_lr", "steplr"}:
             return lr_schedulers.StepLR(optimizer, **kwargs)
-
         if name in {"cosine", "cosineannealing", "cosine_annealing"}:
-            if "T_max" not in kwargs:
-                max_epochs = getattr(self.trainer, "max_epochs", None)
-                if max_epochs is None:
-                    raise ValueError(
-                        "Cosine scheduler requires 'T_max' or trainer.max_epochs.",
-                    )
-                kwargs["T_max"] = max_epochs
             return lr_schedulers.CosineAnnealingLR(optimizer, **kwargs)
 
         if name in {"reduce_on_plateau", "reducelronplateau"}:

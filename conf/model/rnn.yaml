@@ -2,13 +2,14 @@ name: rnn
 module:
   _target_: poetry_generator.models.PoetryLightningModel
   model_type: rnn
-  embedding_dim: 128
-  hidden_dim: 256
-  n_layers: 2
+  embedding_dim: 256
+  hidden_dim: 512
+  n_layers: 3
   learning_rate: 0.001
+  weight_decay: 0.0
 samples:
   prompts:
     - "春江花月夜"
     - "人工智能"
-  max_len: 64
+  max_len: 96
   temperature: 0.9
