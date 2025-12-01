@@ -8,6 +8,7 @@ sync_batchnorm: True
 benchmark: True
 accumulate_grad_batches: 1
 gradient_clip_val: 1.0
+truncated_bptt_steps: 64
 
 num_sanity_val_steps: 0
 val_check_interval: 1.0

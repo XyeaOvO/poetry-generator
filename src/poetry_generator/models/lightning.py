@@ -66,9 +66,17 @@ class PoetryLightningModel(pl.LightningModule):
         self,
         batch: tuple[torch.Tensor, torch.Tensor],
         batch_idx: int,
-    ) -> torch.Tensor:
-        loss, batch_size = self._shared_step(batch)
+        hiddens: torch.Tensor | tuple[torch.Tensor, torch.Tensor] | None = None,
+    ) -> (
+        torch.Tensor
+        | tuple[torch.Tensor, torch.Tensor | tuple[torch.Tensor, torch.Tensor]]
+    ):
+        loss, batch_size, new_hidden = self._forward_with_loss(batch, hiddens)
         self._log_metrics("train", loss, batch_size, on_step=True)
+        new_hidden = self._detach_hidden(new_hidden)
+        trainer = getattr(self, "trainer", None)
+        if trainer and getattr(trainer, "truncated_bptt_steps", 0):
+            return loss, new_hidden
         return loss
 
     def validation_step(
@@ -76,7 +84,7 @@ class PoetryLightningModel(pl.LightningModule):
         batch: tuple[torch.Tensor, torch.Tensor],
         batch_idx: int,
     ) -> torch.Tensor:
-        loss, batch_size = self._shared_step(batch)
+        loss, batch_size, _ = self._forward_with_loss(batch)
         self._log_metrics("val", loss, batch_size)
         return loss
 
@@ -85,7 +93,7 @@ class PoetryLightningModel(pl.LightningModule):
         batch: tuple[torch.Tensor, torch.Tensor],
         batch_idx: int,
     ) -> torch.Tensor:
-        loss, batch_size = self._shared_step(batch)
+        loss, batch_size, _ = self._forward_with_loss(batch)
         self._log_metrics("test", loss, batch_size)
         return loss
 
@@ -163,14 +171,17 @@ class PoetryLightningModel(pl.LightningModule):
 
         return generated[:max_len]
 
-    def _shared_step(
+    def _forward_with_loss(
         self,
         batch: tuple[torch.Tensor, torch.Tensor],
-    ) -> Tuple[torch.Tensor, int]:
+        hidden_state: torch.Tensor | tuple[torch.Tensor, torch.Tensor] | None = None,
+    ) -> Tuple[
+        torch.Tensor, int, torch.Tensor | tuple[torch.Tensor, torch.Tensor] | None
+    ]:
         inputs, targets = batch
-        logits, _ = self(inputs)
+        logits, hidden = self(inputs, hidden_state)
         loss = self._compute_loss(logits, targets)
-        return loss, inputs.size(0)
+        return loss, inputs.size(0), hidden
 
     def _compute_loss(
         self,
@@ -220,6 +231,16 @@ class PoetryLightningModel(pl.LightningModule):
         if trainer is None:
             return False
         return bool(getattr(trainer, "num_devices", 1) > 1)
+
+    @staticmethod
+    def _detach_hidden(
+        hidden: torch.Tensor | tuple[torch.Tensor, torch.Tensor] | None,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor] | None:
+        if hidden is None:
+            return None
+        if isinstance(hidden, tuple):
+            return tuple(h.detach() for h in hidden)
+        return hidden.detach()
 
     def _build_scheduler(
         self,

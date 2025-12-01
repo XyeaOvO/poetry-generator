@@ -1,6 +1,6 @@
 _target_: poetry_generator.data.PoetryDataModule
 data_path: "data/poetry.txt"
 batch_size: 512
-seq_length: 48
+seq_length: 128
 val_split: 0.05
 test_split: 0.05
