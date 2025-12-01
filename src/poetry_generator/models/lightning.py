@@ -22,6 +22,7 @@ class PoetryLightningModel(pl.LightningModule):
         n_layers: int,
         learning_rate: float,
         weight_decay: float = 0.0,
+        label_smoothing: float = 0.0,
         embedding_dropout: float = 0.0,
         rnn_dropout: float = 0.0,
         output_dropout: float = 0.0,
@@ -36,6 +37,8 @@ class PoetryLightningModel(pl.LightningModule):
             raise ValueError("learning_rate must be positive")
         if weight_decay < 0:
             raise ValueError("weight_decay must be non-negative")
+        if not 0.0 <= label_smoothing < 1.0:
+            raise ValueError("label_smoothing must be in [0, 1)")
         self.save_hyperparameters(ignore=["idx_to_char", "char_to_ix"])
 
         self.model = PoetryCoreModel(
@@ -50,7 +53,7 @@ class PoetryLightningModel(pl.LightningModule):
             layer_norm=layer_norm,
             tie_weights=tie_weights,
         )
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
         self.idx_to_char = idx_to_char or []
         self.char_to_ix = char_to_ix or {}
         self.scheduler_cfg = scheduler_cfg or {"name": "none"}

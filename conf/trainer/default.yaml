@@ -3,7 +3,7 @@ accelerator: auto
 devices: auto
 strategy: auto
 
-precision: 16-mixed
+precision: bf16-mixed
 sync_batchnorm: True
 benchmark: True
 accumulate_grad_batches: 1
