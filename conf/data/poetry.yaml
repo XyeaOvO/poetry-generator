@@ -6,6 +6,7 @@ val_split: 0.05
 test_split: 0.05
 max_vocab_size: 4000
 min_char_freq: 2
+bos_token: "<bos>"
+eos_token: "<eos>"
+pad_token: "<pad>"
 unk_token: "�"
-separator_token: "|"
-append_separator: true

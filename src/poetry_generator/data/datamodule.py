@@ -11,50 +11,43 @@ from torch.utils.data import DataLoader, Dataset, random_split
 
 
 def _split_poems(lines: Iterable[str]) -> list[str]:
-    """Split raw lines into poems separated by blank lines."""
-    poems: list[str] = []
-    current: list[str] = []
-    for line in lines:
-        stripped = line.strip()
-        if stripped:
-            current.append(stripped)
-            continue
-        if current:
-            poems.append("\n".join(current))
-            current = []
-    if current:
-        poems.append("\n".join(current))
-    return poems
+    """Treat each non-empty line as a standalone poem."""
+    return [line.strip() for line in lines if line.strip()]
 
 
 class _PoemWindowDataset(Dataset[torch.Tensor]):
     """Dataset that samples fixed-length windows within each poem."""
 
-    def __init__(self, poems: List[torch.Tensor], seq_length: int) -> None:
-        self.poems = poems
+    def __init__(
+        self, poems: List[torch.Tensor], seq_length: int, pad_idx: int
+    ) -> None:
         self.seq_length = seq_length
-        self._indices: list[tuple[int, int]] = []
+        self.pad_idx = pad_idx
+        self._windows: list[torch.Tensor] = []
 
-        for poem_idx, poem in enumerate(self.poems):
+        for poem in poems:
             if poem.ndim != 1:
                 raise ValueError("Each poem tensor must be 1D")
-            max_start = poem.size(0) - seq_length - 1
-            if max_start < 0:
+            if poem.size(0) < seq_length + 1:
+                window = torch.full((seq_length + 1,), pad_idx, dtype=torch.long)
+                window[: poem.size(0)] = poem
+                self._windows.append(window)
                 continue
-            self._indices.extend((poem_idx, start) for start in range(max_start + 1))
 
-        if not self._indices:
+            max_start = poem.size(0) - seq_length - 1
+            for start in range(max_start + 1):
+                self._windows.append(poem[start : start + seq_length + 1])
+
+        if not self._windows:
             raise ValueError("Corpus is too short for the requested seq_length")
 
     def __len__(self) -> int:
-        return len(self._indices)
+        return len(self._windows)
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
-        poem_idx, start = self._indices[idx]
-        poem = self.poems[poem_idx]
-        end = start + self.seq_length
-        inputs = poem[start:end]
-        targets = poem[start + 1 : end + 1]
+        window = self._windows[idx]
+        inputs = window[:-1]
+        targets = window[1:]
         return inputs, targets
 
 
@@ -85,9 +78,10 @@ class PoetryDataModule(pl.LightningDataModule):
         num_workers: int = 20,
         max_vocab_size: Optional[int] = 4000,
         min_char_freq: int = 1,
+        bos_token: str = "<bos>",
+        eos_token: str = "<eos>",
+        pad_token: str = "<pad>",
         unk_token: str = "�",
-        separator_token: str = "|",
-        append_separator: bool = True,
     ) -> None:
         super().__init__()
         if batch_size <= 0:
@@ -104,12 +98,10 @@ class PoetryDataModule(pl.LightningDataModule):
             raise ValueError("max_vocab_size must be positive or None")
         if min_char_freq <= 0:
             raise ValueError("min_char_freq must be positive")
+        if not bos_token or not eos_token or not pad_token:
+            raise ValueError("bos_token, eos_token, and pad_token cannot be empty")
         if not unk_token:
             raise ValueError("unk_token cannot be empty")
-        if len(separator_token) != 1:
-            raise ValueError("separator_token must be a single character")
-        if len(unk_token) != 1:
-            raise ValueError("unk_token must be a single character")
 
         self.data_path = data_path
         self.batch_size = batch_size
@@ -119,9 +111,10 @@ class PoetryDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.max_vocab_size = max_vocab_size
         self.min_char_freq = min_char_freq
+        self.bos_token = bos_token
+        self.eos_token = eos_token
+        self.pad_token = pad_token
         self.unk_token = unk_token
-        self.separator_token = separator_token
-        self.append_separator = append_separator
 
         self._vocab: list[str] = []
         self._char_to_ix: Dict[str, int] = {}
@@ -149,16 +142,17 @@ class PoetryDataModule(pl.LightningDataModule):
         self._ix_to_char = {idx: char for char, idx in self._char_to_ix.items()}
 
         unk_idx = self._char_to_ix[self.unk_token]
-        sep_idx = self._char_to_ix[self.separator_token]
+        pad_idx = self._char_to_ix[self.pad_token]
 
         encoded_poems: list[torch.Tensor] = []
         for poem in poems:
-            encoded = [self._char_to_ix.get(ch, unk_idx) for ch in poem]
-            if self.append_separator:
-                encoded.append(sep_idx)
+            tokens: list[str] = [self.bos_token] + list(poem) + [self.eos_token]
+            encoded = [self._char_to_ix.get(ch, unk_idx) for ch in tokens]
             encoded_poems.append(torch.tensor(encoded, dtype=torch.long))
 
-        full_dataset = _PoemWindowDataset(encoded_poems, self.seq_length)
+        full_dataset = _PoemWindowDataset(
+            encoded_poems, self.seq_length, pad_idx=pad_idx
+        )
 
         dataset_len = len(full_dataset)
         val_size = int(dataset_len * self.val_split)
@@ -249,10 +243,19 @@ class PoetryDataModule(pl.LightningDataModule):
         if self.max_vocab_size is not None:
             sorted_items = sorted_items[: self.max_vocab_size]
 
-        vocab = [self.separator_token, self.unk_token]
-        vocab.extend(
-            ch
-            for ch, _ in sorted_items
-            if ch not in {self.separator_token, self.unk_token}
-        )
+        reserved = [
+            self.pad_token,
+            self.bos_token,
+            self.eos_token,
+            self.unk_token,
+        ]
+        vocab: list[str] = []
+        for token in reserved:
+            if token not in vocab:
+                vocab.append(token)
+
+        for ch, _ in sorted_items:
+            if ch in vocab:
+                continue
+            vocab.append(ch)
         return vocab

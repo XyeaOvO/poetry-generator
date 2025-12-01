@@ -21,6 +21,8 @@ def main(cfg: DictConfig) -> None:
     idx_to_char = [
         vocab_mapping.ix_to_char.get(i, "") for i in range(len(vocab_mapping.vocab))
     ]
+    pad_token = getattr(cfg.data, "pad_token", None)
+    pad_idx = vocab_mapping.char_to_ix.get(pad_token) if pad_token else None
 
     model_cfg = cfg.model.module
     scheduler_cfg = OmegaConf.to_container(cfg.scheduler, resolve=True)
@@ -32,6 +34,7 @@ def main(cfg: DictConfig) -> None:
         idx_to_char=idx_to_char,
         char_to_ix=vocab_mapping.char_to_ix,
         scheduler_cfg=scheduler_cfg,
+        pad_idx=pad_idx,
     )
     model = torch.compile(model, mode="max-autotune")
 

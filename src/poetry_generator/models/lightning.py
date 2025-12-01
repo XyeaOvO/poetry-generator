@@ -23,6 +23,7 @@ class PoetryLightningModel(pl.LightningModule):
         learning_rate: float,
         weight_decay: float = 0.0,
         label_smoothing: float = 0.0,
+        pad_idx: int | None = None,
         embedding_dropout: float = 0.0,
         rnn_dropout: float = 0.0,
         output_dropout: float = 0.0,
@@ -39,6 +40,8 @@ class PoetryLightningModel(pl.LightningModule):
             raise ValueError("weight_decay must be non-negative")
         if not 0.0 <= label_smoothing < 1.0:
             raise ValueError("label_smoothing must be in [0, 1)")
+        if pad_idx is not None and pad_idx < 0:
+            raise ValueError("pad_idx must be non-negative when provided")
         self.save_hyperparameters(ignore=["idx_to_char", "char_to_ix"])
 
         self.model = PoetryCoreModel(
@@ -53,10 +56,14 @@ class PoetryLightningModel(pl.LightningModule):
             layer_norm=layer_norm,
             tie_weights=tie_weights,
         )
-        self.criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+        ce_kwargs: dict[str, object] = {"label_smoothing": label_smoothing}
+        if pad_idx is not None:
+            ce_kwargs["ignore_index"] = pad_idx
+        self.criterion = nn.CrossEntropyLoss(**ce_kwargs)
         self.idx_to_char = idx_to_char or []
         self.char_to_ix = char_to_ix or {}
         self.scheduler_cfg = scheduler_cfg or {"name": "none"}
+        self.pad_idx = pad_idx
 
     def forward(
         self,
@@ -144,6 +151,7 @@ class PoetryLightningModel(pl.LightningModule):
         repetition_penalty: float = 1.1,
         max_newlines: int | None = 6,
         min_tokens_between_newlines: int = 4,
+        eos_idx: int | None = None,
     ) -> List[int]:
         if max_len <= 0:
             raise ValueError("max_len must be positive")
@@ -170,6 +178,9 @@ class PoetryLightningModel(pl.LightningModule):
         newline_idx = self.char_to_ix.get("\n") if hasattr(self, "char_to_ix") else None
         tokens_since_newline = self._tokens_since_newline(generated, newline_idx)
         newline_count = generated.count(newline_idx) if newline_idx is not None else 0
+        eos_index = eos_idx
+        if eos_index is None and hasattr(self, "char_to_ix"):
+            eos_index = self.char_to_ix.get("<eos>")
 
         with torch.no_grad():
             start_tensor = torch.tensor(
@@ -205,6 +216,8 @@ class PoetryLightningModel(pl.LightningModule):
                 next_token = torch.multinomial(probs, num_samples=1)
                 last_token = next_token.item()
                 generated.append(last_token)
+                if eos_index is not None and last_token == eos_index:
+                    break
                 tokens_since_newline += 1
                 if newline_idx is not None and last_token == newline_idx:
                     newline_count += 1
