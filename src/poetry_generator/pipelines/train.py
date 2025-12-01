@@ -5,12 +5,17 @@ import torch
 import pytorch_lightning as pl
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate, to_absolute_path
-import omegaconf
 from omegaconf import DictConfig, OmegaConf
 
-torch.serialization.add_safe_globals(
-    [omegaconf.dictconfig.DictConfig, omegaconf.listconfig.ListConfig]
-)
+_original_torch_load = torch.load
+
+
+def _force_unsafe_load(f, *args, **kwargs):
+    kwargs["weights_only"] = False
+    return _original_torch_load(f, *args, **kwargs)
+
+
+torch.load = _force_unsafe_load
 
 
 @hydra.main(config_path="../../../conf", config_name="config.yaml", version_base=None)

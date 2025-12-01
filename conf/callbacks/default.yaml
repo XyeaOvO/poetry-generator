@@ -1,5 +1,5 @@
 - _target_: poetry_generator.callbacks.SaveVocabCallback
-  output_path: ${hydra:run.dir}/vocab.json
+  output_path: vocab.json
 - _target_: poetry_generator.callbacks.LogGenerationSamplesCallback
   prompts: ${model.samples.prompts}
   acrostic_heads:
@@ -13,7 +13,7 @@
   max_len: ${model.samples.max_len}
   temperature: ${model.samples.temperature}
 - _target_: pytorch_lightning.callbacks.ModelCheckpoint
-  dirpath: ${hydra:run.dir}/checkpoints
+  dirpath: checkpoints
   filename: best-model
   monitor: val/loss
   mode: min
