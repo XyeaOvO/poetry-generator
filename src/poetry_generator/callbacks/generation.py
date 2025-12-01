@@ -14,19 +14,37 @@ class LogGenerationSamplesCallback(pl.Callback):
 
     def __init__(
         self,
-        prompts: Sequence[str],
+        prompts: Sequence[str] | None = None,
+        acrostic_heads: Sequence[str] | None = None,
+        acrostic_line_len: int = 48,
+        long_prompts: Sequence[str] | None = None,
+        long_max_len: int = 512,
+        long_min_lines: int = 20,
         max_len: int = 100,
         temperature: float = 0.9,
     ) -> None:
         super().__init__()
-        if not prompts:
-            raise ValueError("At least one prompt is required for sampling.")
+        if not (prompts or acrostic_heads or long_prompts):
+            raise ValueError(
+                "At least one of prompts/acrostic_heads/long_prompts is required."
+            )
         if max_len <= 0:
             raise ValueError("max_len must be positive.")
         if temperature <= 0:
             raise ValueError("temperature must be positive.")
+        if acrostic_heads is not None and acrostic_line_len <= 0:
+            raise ValueError("acrostic_line_len must be positive.")
+        if long_prompts is not None and long_max_len <= 0:
+            raise ValueError("long_max_len must be positive.")
+        if long_prompts is not None and long_min_lines <= 0:
+            raise ValueError("long_min_lines must be positive.")
 
-        self.prompts = list(prompts)
+        self.prompts = list(prompts) if prompts else []
+        self.acrostic_heads = list(acrostic_heads) if acrostic_heads else []
+        self.acrostic_line_len = acrostic_line_len
+        self.long_prompts = list(long_prompts) if long_prompts else []
+        self.long_max_len = long_max_len
+        self.long_min_lines = long_min_lines
         self.max_len = max_len
         self.temperature = temperature
         self._stage_tables: dict[str, wandb.Table] = {}
@@ -61,49 +79,91 @@ class LogGenerationSamplesCallback(pl.Callback):
             return
 
         pl_module.eval()
-        generated_texts: List[str] = []
-
-        for prompt in self.prompts:
-            try:
-                indices = self._encode_prompt(prompt, pl_module.char_to_ix)
-            except KeyError as exc:
-                generated_texts.append(f"Generation skipped: {exc}")
-                continue
-
-            try:
-                sample_indices = pl_module.generate(
-                    start_indices=indices,
-                    max_len=self.max_len,
-                    temperature=self.temperature,
-                )
-                text = self._decode_indices(sample_indices, pl_module.idx_to_char)
-            except Exception:  # pragma: no cover - unexpected failure should raise
-                tb = traceback.format_exc()
-                pl_module.print(
-                    "Sample callback failed while generating text for prompt"
-                    f" '{prompt}':\n{tb}",
-                )
-                raise
-            generated_texts.append(text)
-
-        pl_module.train()
-
         stage_rows: list[list[str | int]] = []
-        for prompt, text in zip(self.prompts, generated_texts):
+
+        # Prompt continuation
+        for prompt in self.prompts:
+            text = self._safe_generate(
+                pl_module,
+                prompt,
+                max_len=self.max_len,
+                temperature=self.temperature,
+            )
             stage_rows.append(
                 [
                     int(trainer.current_epoch),
                     stage,
+                    "prompt",
                     prompt,
                     text,
                 ],
             )
 
+        # Acrostic poems
+        for head in self.acrostic_heads:
+            try:
+                lines: list[str] = []
+                for ch in head:
+                    indices = self._encode_prompt(ch, pl_module.char_to_ix)
+                    sample_indices = pl_module.generate(
+                        start_indices=indices,
+                        max_len=self.acrostic_line_len,
+                        temperature=self.temperature,
+                    )
+                    decoded = self._decode_indices(
+                        sample_indices, pl_module.idx_to_char
+                    )
+                    if "\n" in decoded:
+                        decoded = decoded.split("\n", maxsplit=1)[0]
+                    lines.append(decoded)
+                text = "\n".join(lines)
+            except Exception:  # pragma: no cover - unexpected failure should raise
+                tb = traceback.format_exc()
+                pl_module.print(
+                    "Sample callback failed while generating acrostic"
+                    f" '{head}':\n{tb}",
+                )
+                raise
+
+            stage_rows.append(
+                [
+                    int(trainer.current_epoch),
+                    stage,
+                    "acrostic",
+                    head,
+                    text,
+                ],
+            )
+
+        # Long-form poems
+        for prompt in self.long_prompts:
+            text = self._safe_generate(
+                pl_module,
+                prompt,
+                max_len=self.long_max_len,
+                temperature=self.temperature,
+            )
+            lines = text.count("\n") + 1
+            if lines < self.long_min_lines:
+                text = f"{text}\n[note] lines={lines} < {self.long_min_lines}"
+
+            stage_rows.append(
+                [
+                    int(trainer.current_epoch),
+                    stage,
+                    "long",
+                    prompt,
+                    text,
+                ],
+            )
+
+        pl_module.train()  # type: ignore[call-arg]
+
         logger = trainer.logger
         if not isinstance(logger, WandbLogger):
             return
 
-        columns = ["epoch", "stage", "prompt", "generated"]
+        columns = ["epoch", "stage", "kind", "prompt", "generated"]
         table = self._stage_tables.get(stage)
         if table is None:
             table = wandb.Table(columns=columns, log_mode="MUTABLE")
@@ -133,3 +193,30 @@ class LogGenerationSamplesCallback(pl.Callback):
         vocab_size = len(idx_to_char)
         chars = [idx_to_char[idx] if 0 <= idx < vocab_size else "" for idx in indices]
         return "".join(chars)
+
+    def _safe_generate(
+        self,
+        pl_module: pl.LightningModule,
+        prompt: str,
+        max_len: int,
+        temperature: float,
+    ) -> str:
+        try:
+            indices = self._encode_prompt(prompt, pl_module.char_to_ix)
+        except KeyError as exc:
+            return f"Generation skipped: {exc}"
+
+        try:
+            sample_indices = pl_module.generate(
+                start_indices=indices,
+                max_len=max_len,
+                temperature=temperature,
+            )
+            return self._decode_indices(sample_indices, pl_module.idx_to_char)
+        except Exception:  # pragma: no cover - unexpected failure should raise
+            tb = traceback.format_exc()
+            pl_module.print(
+                "Sample callback failed while generating text for prompt"
+                f" '{prompt}':\n{tb}",
+            )
+            raise

@@ -15,7 +15,7 @@ module:
   tie_weights: true
 samples:
   prompts:
-    - "春江花月夜"
-    - "人工智能"
+    - "春"
+    - "华夏"
   max_len: 96
   temperature: 0.9

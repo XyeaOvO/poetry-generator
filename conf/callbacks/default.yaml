@@ -2,6 +2,14 @@
   output_path: ${hydra:run.dir}/vocab.json
 - _target_: poetry_generator.callbacks.LogGenerationSamplesCallback
   prompts: ${model.samples.prompts}
+  acrostic_heads:
+    - "未来学院元班"
+    - "人工智能"
+  acrostic_line_len: 48
+  long_prompts:
+    - "春江花月夜"
+  long_max_len: 800
+  long_min_lines: 20
   max_len: ${model.samples.max_len}
   temperature: ${model.samples.temperature}
 - _target_: pytorch_lightning.callbacks.ModelCheckpoint
