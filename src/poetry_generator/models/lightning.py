@@ -139,17 +139,17 @@ class PoetryLightningModel(pl.LightningModule):
             ).unsqueeze(0)
             _, hidden = self.model(start_tensor, None)
 
+            current_input = torch.empty((1, 1), dtype=torch.long, device=device)
+            last_token = generated[-1]
+
             while len(generated) < max_len:
-                current_input = torch.tensor(
-                    [[generated[-1]]],
-                    dtype=torch.long,
-                    device=device,
-                )
+                current_input.fill_(last_token)
                 logits, hidden = self.model(current_input, hidden)
                 logits = logits[:, -1, :] / temperature
                 probs = torch.softmax(logits, dim=-1)
-                next_token = torch.multinomial(probs, num_samples=1).item()
-                generated.append(next_token)
+                next_token = torch.multinomial(probs, num_samples=1)
+                last_token = next_token.item()
+                generated.append(last_token)
 
         return generated[:max_len]
 
