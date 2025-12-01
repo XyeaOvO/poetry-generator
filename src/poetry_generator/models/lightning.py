@@ -136,6 +136,11 @@ class PoetryLightningModel(pl.LightningModule):
         start_indices: Sequence[int],
         max_len: int = 100,
         temperature: float = 1.0,
+        top_k: int | None = None,
+        top_p: float = 0.9,
+        repetition_penalty: float = 1.1,
+        max_newlines: int | None = 6,
+        min_tokens_between_newlines: int = 4,
     ) -> List[int]:
         if max_len <= 0:
             raise ValueError("max_len must be positive")
@@ -143,11 +148,25 @@ class PoetryLightningModel(pl.LightningModule):
             raise ValueError("temperature must be positive")
         if not start_indices:
             raise ValueError("start_indices cannot be empty")
+        if top_k is not None and top_k <= 0:
+            raise ValueError("top_k must be positive when provided")
+        if not 0 < top_p <= 1:
+            raise ValueError("top_p must be in (0, 1]")
+        if repetition_penalty <= 0:
+            raise ValueError("repetition_penalty must be positive")
+        if max_newlines is not None and max_newlines <= 0:
+            raise ValueError("max_newlines must be positive or None")
+        if min_tokens_between_newlines < 0:
+            raise ValueError("min_tokens_between_newlines must be non-negative")
 
         device = self.device
         generated = list(start_indices)
         self.eval()
         self.model.eval()
+
+        newline_idx = self.char_to_ix.get("\n") if hasattr(self, "char_to_ix") else None
+        tokens_since_newline = self._tokens_since_newline(generated, newline_idx)
+        newline_count = generated.count(newline_idx) if newline_idx is not None else 0
 
         with torch.no_grad():
             start_tensor = torch.tensor(
@@ -163,11 +182,30 @@ class PoetryLightningModel(pl.LightningModule):
             while len(generated) < max_len:
                 current_input.fill_(last_token)
                 logits, hidden = self.model(current_input, hidden)
-                logits = logits[:, -1, :] / temperature
+                logits = logits[:, -1, :].squeeze(0) / temperature
+                logits = self._apply_repetition_penalty(
+                    logits,
+                    generated,
+                    repetition_penalty,
+                )
+                logits = self._mask_newlines(
+                    logits,
+                    newline_idx,
+                    newline_count,
+                    tokens_since_newline,
+                    max_newlines,
+                    min_tokens_between_newlines,
+                )
+                logits = self._filter_logits(logits, top_k=top_k, top_p=top_p)
                 probs = torch.softmax(logits, dim=-1)
+                probs = probs / probs.sum()
                 next_token = torch.multinomial(probs, num_samples=1)
                 last_token = next_token.item()
                 generated.append(last_token)
+                tokens_since_newline += 1
+                if newline_idx is not None and last_token == newline_idx:
+                    newline_count += 1
+                    tokens_since_newline = 0
 
         return generated[:max_len]
 
@@ -233,6 +271,18 @@ class PoetryLightningModel(pl.LightningModule):
         return bool(getattr(trainer, "num_devices", 1) > 1)
 
     @staticmethod
+    def _tokens_since_newline(
+        generated: Sequence[int],
+        newline_idx: int | None,
+    ) -> int:
+        if newline_idx is None:
+            return len(generated)
+        for offset, token in enumerate(reversed(generated), 1):
+            if token == newline_idx:
+                return offset - 1
+        return len(generated)
+
+    @staticmethod
     def _detach_hidden(
         hidden: torch.Tensor | tuple[torch.Tensor, torch.Tensor] | None,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor] | None:
@@ -241,6 +291,70 @@ class PoetryLightningModel(pl.LightningModule):
         if isinstance(hidden, tuple):
             return tuple(h.detach() for h in hidden)
         return hidden.detach()
+
+    @staticmethod
+    def _apply_repetition_penalty(
+        logits: torch.Tensor,
+        generated: Sequence[int],
+        repetition_penalty: float,
+    ) -> torch.Tensor:
+        if repetition_penalty == 1.0 or not generated:
+            return logits
+        vocab_size = logits.size(-1)
+        token_tensor = torch.tensor(generated, device=logits.device)
+        counts = torch.bincount(token_tensor, minlength=vocab_size).bool()
+        penalized = logits.clone()
+        penalized[counts & (penalized < 0)] *= repetition_penalty
+        penalized[counts & (penalized >= 0)] /= repetition_penalty
+        return penalized
+
+    @staticmethod
+    def _mask_newlines(
+        logits: torch.Tensor,
+        newline_idx: int | None,
+        newline_count: int,
+        tokens_since_newline: int,
+        max_newlines: int | None,
+        min_tokens_between_newlines: int,
+    ) -> torch.Tensor:
+        if newline_idx is None:
+            return logits
+        masked = logits.clone()
+        if max_newlines is not None and newline_count >= max_newlines:
+            masked[newline_idx] = -torch.inf
+        elif tokens_since_newline < min_tokens_between_newlines:
+            masked[newline_idx] = -torch.inf
+        return masked
+
+    @staticmethod
+    def _filter_logits(
+        logits: torch.Tensor,
+        top_k: int | None = None,
+        top_p: float = 1.0,
+    ) -> torch.Tensor:
+        filtered = logits.clone()
+        if top_k is not None and top_k > 0 and top_k < filtered.size(-1):
+            topk = torch.topk(filtered, top_k)
+            min_topk = topk.values[..., -1, None]
+            filtered = torch.where(
+                filtered < min_topk,
+                torch.tensor(-torch.inf, device=logits.device),
+                filtered,
+            )
+
+        if top_p < 1.0:
+            sorted_logits, sorted_indices = torch.sort(filtered, descending=True)
+            sorted_probs = torch.softmax(sorted_logits, dim=-1)
+            cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+            cutoff = cumulative_probs > top_p
+            cutoff[..., 0] = False
+            sorted_logits = torch.where(
+                cutoff, torch.tensor(-torch.inf, device=logits.device), sorted_logits
+            )
+            # Re-map back to original ordering.
+            filtered = torch.full_like(filtered, -torch.inf)
+            filtered.scatter_(dim=-1, index=sorted_indices, src=sorted_logits)
+        return filtered
 
     def _build_scheduler(
         self,
