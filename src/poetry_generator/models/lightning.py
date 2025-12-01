@@ -181,7 +181,8 @@ class PoetryLightningModel(pl.LightningModule):
         eos_index = eos_idx
         if eos_index is None and hasattr(self, "char_to_ix"):
             eos_index = self.char_to_ix.get("<eos>")
-        banned_indices = self._banned_token_indices(eos_index)
+        char_to_ix = self.char_to_ix if hasattr(self, "char_to_ix") else None
+        banned_indices = self._banned_token_indices(eos_index, char_to_ix)
 
         with torch.no_grad():
             start_tensor = torch.tensor(
@@ -289,10 +290,17 @@ class PoetryLightningModel(pl.LightningModule):
         return bool(getattr(trainer, "num_devices", 1) > 1)
 
     @staticmethod
-    def _banned_token_indices(eos_index: int | None) -> set[int]:
+    def _banned_token_indices(
+        eos_index: int | None,
+        char_to_ix: Dict[str, int] | None,
+    ) -> set[int]:
         banned = set()
-        if eos_index is not None:
-            banned.add(eos_index)
+        special_tokens = ("<pad>", "<unk>", "<bos>")
+        if char_to_ix:
+            for token in special_tokens:
+                idx = char_to_ix.get(token)
+                if idx is not None:
+                    banned.add(idx)
         return banned
 
     @staticmethod

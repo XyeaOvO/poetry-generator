@@ -132,6 +132,8 @@ def main() -> None:
         str(ckpt_path),
         map_location=device,
     )
+    model.char_to_ix = char_to_ix
+    model.idx_to_char = [ix_to_char[idx] for idx in range(len(ix_to_char))]
     model.to(device)
     model.eval()
 

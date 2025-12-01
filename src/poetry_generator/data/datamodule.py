@@ -7,7 +7,7 @@ from typing import Dict, Iterable, List, Optional
 
 import pytorch_lightning as pl
 import torch
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, Dataset
 
 
 def _split_poems(lines: Iterable[str]) -> list[str]:
@@ -158,27 +158,31 @@ class PoetryDataModule(pl.LightningDataModule):
             encoded = [self._char_to_ix.get(ch, unk_idx) for ch in tokens]
             encoded_poems.append(torch.tensor(encoded, dtype=torch.long))
 
-        full_dataset = _PoemWindowDataset(
-            encoded_poems, self.seq_length, pad_idx=pad_idx
-        )
-
-        dataset_len = len(full_dataset)
-        val_size = int(dataset_len * self.val_split)
-        test_size = int(dataset_len * self.test_split)
+        num_poems = len(encoded_poems)
+        val_size = int(num_poems * self.val_split)
+        test_size = int(num_poems * self.test_split)
         if val_size == 0:
             val_size = 1
         if test_size == 0:
             test_size = 1
-        train_size = dataset_len - val_size - test_size
+        train_size = num_poems - val_size - test_size
         if train_size <= 0:
             raise ValueError("Validation/Test split too large for dataset size")
 
-        splits = random_split(
-            full_dataset,
-            lengths=[train_size, val_size, test_size],
-            generator=torch.Generator().manual_seed(42),
-        )
-        self._train_dataset, self._val_dataset, self._test_dataset = splits
+        generator = torch.Generator().manual_seed(42)
+        indices = torch.randperm(num_poems, generator=generator).tolist()
+
+        train_indices = indices[:train_size]
+        val_indices = indices[train_size : train_size + val_size]
+        test_indices = indices[train_size + val_size :]
+
+        def build_subset(idxs: list[int]) -> _PoemWindowDataset:
+            subset = [encoded_poems[i] for i in idxs]
+            return _PoemWindowDataset(subset, self.seq_length, pad_idx=pad_idx)
+
+        self._train_dataset = build_subset(train_indices)
+        self._val_dataset = build_subset(val_indices)
+        self._test_dataset = build_subset(test_indices)
 
     @property
     def vocab(self) -> list[str]:
@@ -198,45 +202,21 @@ class PoetryDataModule(pl.LightningDataModule):
             raise RuntimeError(
                 "DataModule must be set up before requesting dataloaders",
             )
-        return DataLoader(
-            self._train_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            drop_last=True,
-            num_workers=self.num_workers,
-            pin_memory=True,
-            persistent_workers=True,
-        )
+        return DataLoader(self._train_dataset, **self._loader_kwargs(True, True))
 
     def val_dataloader(self) -> DataLoader:
         if self._val_dataset is None:
             raise RuntimeError(
                 "DataModule must be set up before requesting dataloaders",
             )
-        return DataLoader(
-            self._val_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            drop_last=False,
-            num_workers=self.num_workers,
-            pin_memory=True,
-            persistent_workers=True,
-        )
+        return DataLoader(self._val_dataset, **self._loader_kwargs(False, False))
 
     def test_dataloader(self) -> DataLoader:
         if self._test_dataset is None:
             raise RuntimeError(
                 "DataModule must be set up before requesting dataloaders",
             )
-        return DataLoader(
-            self._test_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            drop_last=False,
-            num_workers=self.num_workers,
-            pin_memory=True,
-            persistent_workers=True,
-        )
+        return DataLoader(self._test_dataset, **self._loader_kwargs(False, False))
 
     def _build_vocab(self, poems: list[str]) -> list[str]:
         counter: Counter[str] = Counter()
@@ -267,3 +247,13 @@ class PoetryDataModule(pl.LightningDataModule):
                 continue
             vocab.append(ch)
         return vocab
+
+    def _loader_kwargs(self, shuffle: bool, drop_last: bool) -> dict[str, object]:
+        return {
+            "batch_size": self.batch_size,
+            "shuffle": shuffle,
+            "drop_last": drop_last,
+            "num_workers": self.num_workers,
+            "pin_memory": True,
+            "persistent_workers": self.num_workers > 0,
+        }
