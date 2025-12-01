@@ -5,7 +5,12 @@ import torch
 import pytorch_lightning as pl
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate, to_absolute_path
+import omegaconf
 from omegaconf import DictConfig, OmegaConf
+
+torch.serialization.add_safe_globals(
+    [omegaconf.dictconfig.DictConfig, omegaconf.listconfig.ListConfig]
+)
 
 
 @hydra.main(config_path="../../../conf", config_name="config.yaml", version_base=None)
