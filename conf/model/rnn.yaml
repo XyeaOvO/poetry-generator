@@ -7,6 +7,11 @@ module:
   n_layers: 3
   learning_rate: 0.001
   weight_decay: 0.0
+  embedding_dropout: 0.1
+  rnn_dropout: 0.2
+  output_dropout: 0.1
+  layer_norm: true
+  tie_weights: true
 samples:
   prompts:
     - "春江花月夜"

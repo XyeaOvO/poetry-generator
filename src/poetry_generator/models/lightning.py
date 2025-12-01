@@ -22,6 +22,11 @@ class PoetryLightningModel(pl.LightningModule):
         n_layers: int,
         learning_rate: float,
         weight_decay: float = 0.0,
+        embedding_dropout: float = 0.0,
+        rnn_dropout: float = 0.0,
+        output_dropout: float = 0.0,
+        layer_norm: bool = False,
+        tie_weights: bool = False,
         idx_to_char: List[str] | None = None,
         char_to_ix: Dict[str, int] | None = None,
         scheduler_cfg: Dict[str, object] | None = None,
@@ -39,6 +44,11 @@ class PoetryLightningModel(pl.LightningModule):
             embedding_dim=embedding_dim,
             hidden_dim=hidden_dim,
             n_layers=n_layers,
+            embedding_dropout=embedding_dropout,
+            rnn_dropout=rnn_dropout,
+            output_dropout=output_dropout,
+            layer_norm=layer_norm,
+            tie_weights=tie_weights,
         )
         self.criterion = nn.CrossEntropyLoss()
         self.idx_to_char = idx_to_char or []
