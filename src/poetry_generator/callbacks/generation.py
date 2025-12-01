@@ -103,19 +103,15 @@ class LogGenerationSamplesCallback(pl.Callback):
         for head in self.acrostic_heads:
             try:
                 lines: list[str] = []
+                accumulated = ""
                 for ch in head:
-                    indices = self._encode_prompt(ch, pl_module.char_to_ix)
-                    sample_indices = pl_module.generate(
-                        start_indices=indices,
-                        max_len=self.acrostic_line_len,
-                        temperature=self.temperature,
+                    line = self._generate_acrostic_line(
+                        pl_module=pl_module,
+                        accumulated=accumulated,
+                        head_char=ch,
                     )
-                    decoded = self._decode_indices(
-                        sample_indices, pl_module.idx_to_char
-                    )
-                    if "\n" in decoded:
-                        decoded = decoded.split("\n", maxsplit=1)[0]
-                    lines.append(decoded)
+                    lines.append(line)
+                    accumulated += line
                 text = "\n".join(lines)
             except Exception:  # pragma: no cover - unexpected failure should raise
                 tb = traceback.format_exc()
@@ -144,8 +140,6 @@ class LogGenerationSamplesCallback(pl.Callback):
                 temperature=self.temperature,
             )
             lines = text.count("\n") + 1
-            if lines < self.long_min_lines:
-                text = f"{text}\n[note] lines={lines} < {self.long_min_lines}"
 
             stage_rows.append(
                 [
@@ -194,12 +188,39 @@ class LogGenerationSamplesCallback(pl.Callback):
         chars = [idx_to_char[idx] if 0 <= idx < vocab_size else "" for idx in indices]
         return "".join(chars)
 
+    @staticmethod
+    def _truncate_sentence(text: str) -> str:
+        """Cut at the first sentence-ending punctuation if present."""
+        for sep in ("。", "！", "？", ".", "!", "?"):
+            pos = text.find(sep)
+            if pos != -1:
+                return text[: pos + 1]
+        return text
+
+    def _generate_acrostic_line(
+        self,
+        pl_module: pl.LightningModule,
+        accumulated: str,
+        head_char: str,
+    ) -> str:
+        prompt = accumulated + head_char
+        raw = self._safe_generate(
+            pl_module,
+            prompt,
+            max_len=len(prompt) + self.acrostic_line_len,
+            temperature=self.temperature,
+        )
+        suffix = raw[len(accumulated) :] if len(raw) > len(accumulated) else head_char
+        line = self._truncate_sentence(suffix)
+        return line
+
     def _safe_generate(
         self,
         pl_module: pl.LightningModule,
         prompt: str,
         max_len: int,
         temperature: float,
+        eos_idx: int | None = None,
     ) -> str:
         try:
             indices = self._encode_prompt(prompt, pl_module.char_to_ix)
@@ -211,6 +232,7 @@ class LogGenerationSamplesCallback(pl.Callback):
                 start_indices=indices,
                 max_len=max_len,
                 temperature=temperature,
+                eos_idx=eos_idx,
             )
             return self._decode_indices(sample_indices, pl_module.idx_to_char)
         except Exception:  # pragma: no cover - unexpected failure should raise

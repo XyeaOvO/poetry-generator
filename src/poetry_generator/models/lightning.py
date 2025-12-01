@@ -181,6 +181,7 @@ class PoetryLightningModel(pl.LightningModule):
         eos_index = eos_idx
         if eos_index is None and hasattr(self, "char_to_ix"):
             eos_index = self.char_to_ix.get("<eos>")
+        banned_indices = self._banned_token_indices(eos_index)
 
         with torch.no_grad():
             start_tensor = torch.tensor(
@@ -202,6 +203,7 @@ class PoetryLightningModel(pl.LightningModule):
                     generated,
                     repetition_penalty,
                 )
+                logits = self._mask_special_tokens(logits, banned_indices)
                 logits = self._mask_newlines(
                     logits,
                     newline_idx,
@@ -285,6 +287,26 @@ class PoetryLightningModel(pl.LightningModule):
         if trainer is None:
             return False
         return bool(getattr(trainer, "num_devices", 1) > 1)
+
+    @staticmethod
+    def _banned_token_indices(eos_index: int | None) -> set[int]:
+        banned = set()
+        if eos_index is not None:
+            banned.add(eos_index)
+        return banned
+
+    @staticmethod
+    def _mask_special_tokens(
+        logits: torch.Tensor,
+        banned_indices: set[int],
+    ) -> torch.Tensor:
+        if not banned_indices:
+            return logits
+        masked = logits.clone()
+        for idx in banned_indices:
+            if 0 <= idx < masked.size(-1):
+                masked[idx] = -torch.inf
+        return masked
 
     @staticmethod
     def _tokens_since_newline(

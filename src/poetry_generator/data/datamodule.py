@@ -11,8 +11,16 @@ from torch.utils.data import DataLoader, Dataset, random_split
 
 
 def _split_poems(lines: Iterable[str]) -> list[str]:
-    """Treat each non-empty line as a standalone poem."""
-    return [line.strip() for line in lines if line.strip()]
+    """Treat each non-empty line as a standalone poem, dropping lines with '_'."""
+    poems: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if "_" in stripped:
+            continue
+        poems.append(stripped)
+    return poems
 
 
 class _PoemWindowDataset(Dataset[torch.Tensor]):
