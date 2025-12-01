@@ -13,6 +13,7 @@ module:
   output_dropout: 0.1
   layer_norm: true
   tie_weights: true
+  unk_token: ${data.unk_token}
 samples:
   prompts:
     - "春"

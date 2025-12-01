@@ -35,6 +35,7 @@ def main(cfg: DictConfig) -> None:
         char_to_ix=vocab_mapping.char_to_ix,
         scheduler_cfg=scheduler_cfg,
         pad_idx=pad_idx,
+        unk_token=getattr(cfg.data, "unk_token", None),
     )
     model = torch.compile(model, mode="max-autotune")
 

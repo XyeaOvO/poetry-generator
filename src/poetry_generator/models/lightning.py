@@ -32,6 +32,7 @@ class PoetryLightningModel(pl.LightningModule):
         idx_to_char: List[str] | None = None,
         char_to_ix: Dict[str, int] | None = None,
         scheduler_cfg: Dict[str, object] | None = None,
+        unk_token: str | None = None,
     ) -> None:
         super().__init__()
         if learning_rate <= 0:
@@ -64,6 +65,7 @@ class PoetryLightningModel(pl.LightningModule):
         self.char_to_ix = char_to_ix or {}
         self.scheduler_cfg = scheduler_cfg or {"name": "none"}
         self.pad_idx = pad_idx
+        self.unk_token = unk_token
 
     def forward(
         self,
@@ -182,7 +184,12 @@ class PoetryLightningModel(pl.LightningModule):
         if eos_index is None and hasattr(self, "char_to_ix"):
             eos_index = self.char_to_ix.get("<eos>")
         char_to_ix = self.char_to_ix if hasattr(self, "char_to_ix") else None
-        banned_indices = self._banned_token_indices(eos_index, char_to_ix)
+        banned_indices = self._banned_token_indices(
+            eos_index=eos_index,
+            char_to_ix=char_to_ix,
+            pad_idx=self.pad_idx,
+            unk_token=self.unk_token,
+        )
 
         with torch.no_grad():
             start_tensor = torch.tensor(
@@ -293,14 +300,29 @@ class PoetryLightningModel(pl.LightningModule):
     def _banned_token_indices(
         eos_index: int | None,
         char_to_ix: Dict[str, int] | None,
+        pad_idx: int | None,
+        unk_token: str | None = None,
     ) -> set[int]:
-        banned = set()
-        special_tokens = ("<pad>", "<unk>", "<bos>")
+        banned: set[int] = set()
         if char_to_ix:
-            for token in special_tokens:
+            candidates = ["<pad>", "<unk>", "<bos>"]
+            if unk_token:
+                candidates.append(unk_token)
+            unk_guess = next(
+                (token for token in ("�", "[UNK]") if token in char_to_ix),
+                None,
+            )
+            if unk_guess:
+                candidates.append(unk_guess)
+
+            for token in candidates:
                 idx = char_to_ix.get(token)
                 if idx is not None:
                     banned.add(idx)
+        if pad_idx is not None:
+            banned.add(pad_idx)
+        if eos_index is not None:
+            banned.discard(eos_index)
         return banned
 
     @staticmethod
