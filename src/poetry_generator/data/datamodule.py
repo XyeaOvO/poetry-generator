@@ -1,39 +1,60 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, Optional
+from typing import Dict, Iterable, List, Optional
 
 import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader, Dataset, random_split
 
 
-def _clean_corpus(lines: Iterable[str]) -> str:
-    """Return a compact corpus string without empty lines."""
-    cleaned = [line.strip() for line in lines if line.strip()]
-    return "\n".join(cleaned)
+def _split_poems(lines: Iterable[str]) -> list[str]:
+    """Split raw lines into poems separated by blank lines."""
+    poems: list[str] = []
+    current: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped:
+            current.append(stripped)
+            continue
+        if current:
+            poems.append("\n".join(current))
+            current = []
+    if current:
+        poems.append("\n".join(current))
+    return poems
 
 
-class _SequenceDataset(Dataset[torch.Tensor]):
-    """Simple sequence dataset that yields (input, target) pairs."""
+class _PoemWindowDataset(Dataset[torch.Tensor]):
+    """Dataset that samples fixed-length windows within each poem."""
 
-    def __init__(self, encoded_text: torch.Tensor, seq_length: int) -> None:
-        if encoded_text.ndim != 1:
-            raise ValueError("encoded_text must be a 1D tensor")
-        self.encoded_text = encoded_text
+    def __init__(self, poems: List[torch.Tensor], seq_length: int) -> None:
+        self.poems = poems
         self.seq_length = seq_length
-        if len(encoded_text) - seq_length - 1 < 0:
+        self._indices: list[tuple[int, int]] = []
+
+        for poem_idx, poem in enumerate(self.poems):
+            if poem.ndim != 1:
+                raise ValueError("Each poem tensor must be 1D")
+            max_start = poem.size(0) - seq_length - 1
+            if max_start < 0:
+                continue
+            self._indices.extend((poem_idx, start) for start in range(max_start + 1))
+
+        if not self._indices:
             raise ValueError("Corpus is too short for the requested seq_length")
 
     def __len__(self) -> int:
-        return len(self.encoded_text) - self.seq_length
+        return len(self._indices)
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
-        start = idx
+        poem_idx, start = self._indices[idx]
+        poem = self.poems[poem_idx]
         end = start + self.seq_length
-        inputs = self.encoded_text[start:end]
-        targets = self.encoded_text[start + 1 : end + 1]
+        inputs = poem[start:end]
+        targets = poem[start + 1 : end + 1]
         return inputs, targets
 
 
@@ -62,6 +83,11 @@ class PoetryDataModule(pl.LightningDataModule):
         val_split: float,
         test_split: float,
         num_workers: int = 20,
+        max_vocab_size: Optional[int] = 4000,
+        min_char_freq: int = 1,
+        unk_token: str = "�",
+        separator_token: str = "|",
+        append_separator: bool = True,
     ) -> None:
         super().__init__()
         if batch_size <= 0:
@@ -74,6 +100,16 @@ class PoetryDataModule(pl.LightningDataModule):
             raise ValueError("test_split must be in the range (0, 1)")
         if val_split + test_split >= 1:
             raise ValueError("The sum of val_split and test_split must be < 1")
+        if max_vocab_size is not None and max_vocab_size <= 0:
+            raise ValueError("max_vocab_size must be positive or None")
+        if min_char_freq <= 0:
+            raise ValueError("min_char_freq must be positive")
+        if not unk_token:
+            raise ValueError("unk_token cannot be empty")
+        if len(separator_token) != 1:
+            raise ValueError("separator_token must be a single character")
+        if len(unk_token) != 1:
+            raise ValueError("unk_token must be a single character")
 
         self.data_path = data_path
         self.batch_size = batch_size
@@ -81,6 +117,11 @@ class PoetryDataModule(pl.LightningDataModule):
         self.val_split = val_split
         self.test_split = test_split
         self.num_workers = num_workers
+        self.max_vocab_size = max_vocab_size
+        self.min_char_freq = min_char_freq
+        self.unk_token = unk_token
+        self.separator_token = separator_token
+        self.append_separator = append_separator
 
         self._vocab: list[str] = []
         self._char_to_ix: Dict[str, int] = {}
@@ -98,20 +139,26 @@ class PoetryDataModule(pl.LightningDataModule):
         if self._train_dataset is not None and self._val_dataset is not None:
             return
 
-        corpus = Path(self.data_path).read_text(encoding="utf-8")
-        corpus = _clean_corpus(corpus.splitlines())
-        if not corpus:
+        raw_text = Path(self.data_path).read_text(encoding="utf-8")
+        poems = _split_poems(raw_text.splitlines())
+        if not poems:
             raise ValueError("Dataset is empty after cleaning")
 
-        self._vocab = sorted(set(corpus))
+        self._vocab = self._build_vocab(poems)
         self._char_to_ix = {char: idx for idx, char in enumerate(self._vocab)}
         self._ix_to_char = {idx: char for char, idx in self._char_to_ix.items()}
 
-        encoded = torch.tensor(
-            [self._char_to_ix[ch] for ch in corpus],
-            dtype=torch.long,
-        )
-        full_dataset = _SequenceDataset(encoded, self.seq_length)
+        unk_idx = self._char_to_ix[self.unk_token]
+        sep_idx = self._char_to_ix[self.separator_token]
+
+        encoded_poems: list[torch.Tensor] = []
+        for poem in poems:
+            encoded = [self._char_to_ix.get(ch, unk_idx) for ch in poem]
+            if self.append_separator:
+                encoded.append(sep_idx)
+            encoded_poems.append(torch.tensor(encoded, dtype=torch.long))
+
+        full_dataset = _PoemWindowDataset(encoded_poems, self.seq_length)
 
         dataset_len = len(full_dataset)
         val_size = int(dataset_len * self.val_split)
@@ -188,3 +235,24 @@ class PoetryDataModule(pl.LightningDataModule):
             pin_memory=True,
             persistent_workers=True,
         )
+
+    def _build_vocab(self, poems: list[str]) -> list[str]:
+        counter: Counter[str] = Counter()
+        for poem in poems:
+            counter.update(poem)
+
+        filtered = {
+            ch: freq for ch, freq in counter.items() if freq >= self.min_char_freq
+        }
+        # Sort by frequency (desc) then by character to keep determinism.
+        sorted_items = sorted(filtered.items(), key=lambda item: (-item[1], item[0]))
+        if self.max_vocab_size is not None:
+            sorted_items = sorted_items[: self.max_vocab_size]
+
+        vocab = [self.separator_token, self.unk_token]
+        vocab.extend(
+            ch
+            for ch, _ in sorted_items
+            if ch not in {self.separator_token, self.unk_token}
+        )
+        return vocab

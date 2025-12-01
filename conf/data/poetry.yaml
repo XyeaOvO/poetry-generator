@@ -4,3 +4,8 @@ batch_size: 512
 seq_length: 128
 val_split: 0.05
 test_split: 0.05
+max_vocab_size: 4000
+min_char_freq: 2
+unk_token: "�"
+separator_token: "|"
+append_separator: true
