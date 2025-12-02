@@ -19,7 +19,6 @@ class LogGenerationSamplesCallback(pl.Callback):
         acrostic_line_len: int = 48,
         long_prompts: Sequence[str] | None = None,
         long_max_len: int = 512,
-        long_min_lines: int = 20,
         max_len: int = 100,
         temperature: float = 0.9,
     ) -> None:
@@ -36,15 +35,12 @@ class LogGenerationSamplesCallback(pl.Callback):
             raise ValueError("acrostic_line_len must be positive.")
         if long_prompts is not None and long_max_len <= 0:
             raise ValueError("long_max_len must be positive.")
-        if long_prompts is not None and long_min_lines <= 0:
-            raise ValueError("long_min_lines must be positive.")
 
         self.prompts = list(prompts) if prompts else []
         self.acrostic_heads = list(acrostic_heads) if acrostic_heads else []
         self.acrostic_line_len = acrostic_line_len
         self.long_prompts = list(long_prompts) if long_prompts else []
         self.long_max_len = long_max_len
-        self.long_min_lines = long_min_lines
         self.max_len = max_len
         self.temperature = temperature
         self._stage_tables: dict[str, wandb.Table] = {}
@@ -83,20 +79,16 @@ class LogGenerationSamplesCallback(pl.Callback):
 
         # Prompt continuation
         for prompt in self.prompts:
-            text = self._safe_generate(
-                pl_module,
-                prompt,
-                max_len=self.max_len,
-                temperature=self.temperature,
-            )
             stage_rows.append(
-                [
-                    int(trainer.current_epoch),
-                    stage,
-                    "prompt",
-                    prompt,
-                    text,
-                ],
+                self._build_row(
+                    trainer=trainer,
+                    stage=stage,
+                    kind="prompt",
+                    prompt=prompt,
+                    max_len=self.max_len,
+                    temperature=self.temperature,
+                    pl_module=pl_module,
+                ),
             )
 
         # Acrostic poems
@@ -133,22 +125,16 @@ class LogGenerationSamplesCallback(pl.Callback):
 
         # Long-form poems
         for prompt in self.long_prompts:
-            text = self._safe_generate(
-                pl_module,
-                prompt,
-                max_len=self.long_max_len,
-                temperature=self.temperature,
-            )
-            lines = text.count("\n") + 1
-
             stage_rows.append(
-                [
-                    int(trainer.current_epoch),
-                    stage,
-                    "long",
-                    prompt,
-                    text,
-                ],
+                self._build_row(
+                    trainer=trainer,
+                    stage=stage,
+                    kind="long",
+                    prompt=prompt,
+                    max_len=self.long_max_len,
+                    temperature=self.temperature,
+                    pl_module=pl_module,
+                ),
             )
 
         pl_module.train()  # type: ignore[call-arg]
@@ -213,6 +199,30 @@ class LogGenerationSamplesCallback(pl.Callback):
         suffix = raw[len(accumulated) :] if len(raw) > len(accumulated) else head_char
         line = self._truncate_sentence(suffix)
         return line
+
+    def _build_row(
+        self,
+        trainer: pl.Trainer,
+        stage: str,
+        kind: str,
+        prompt: str,
+        max_len: int,
+        temperature: float,
+        pl_module: pl.LightningModule,
+    ) -> list[str | int]:
+        text = self._safe_generate(
+            pl_module,
+            prompt,
+            max_len=max_len,
+            temperature=temperature,
+        )
+        return [
+            int(trainer.current_epoch),
+            stage,
+            kind,
+            prompt,
+            text,
+        ]
 
     def _safe_generate(
         self,

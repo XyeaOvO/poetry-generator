@@ -9,7 +9,6 @@
   long_prompts:
     - "春江花月夜"
   long_max_len: 800
-  long_min_lines: 20
   max_len: ${model.samples.max_len}
   temperature: ${model.samples.temperature}
 - _target_: pytorch_lightning.callbacks.ModelCheckpoint

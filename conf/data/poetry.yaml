@@ -4,8 +4,8 @@ batch_size: 128
 seq_length: 48
 val_split: 0.05
 test_split: 0.05
-max_vocab_size: 4000
-min_char_freq: 2
+max_vocab_size: 5000
+min_char_freq: 3
 bos_token: "<bos>"
 eos_token: "<eos>"
 pad_token: "<pad>"
