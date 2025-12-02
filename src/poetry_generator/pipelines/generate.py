@@ -31,6 +31,15 @@ def decode_indices(indices: List[int], ix_to_char: Dict[int, str]) -> str:
     return "".join(chars)
 
 
+def truncate_sentence(text: str) -> str:
+    """Return text cut at the first sentence-ending punctuation (if any)."""
+    for sep in ("。", "！", "？", ".", "!", "?", "\n"):
+        pos = text.find(sep)
+        if pos != -1:
+            return text[: pos if sep == "\n" else pos + 1]
+    return text
+
+
 def generate_from_prompt(
     model: PoetryLightningModel,
     char_to_ix: Dict[str, int],
@@ -57,19 +66,24 @@ def generate_acrostic(
     temperature: float,
 ) -> str:
     lines = []
+    accumulated = ""
     for char in head:
         if char not in char_to_ix:
             raise KeyError(f"Head character '{char}' not found in vocabulary")
-        start_idx = [char_to_ix[char]]
+        prompt = accumulated + char
+        start_idx = encode_text(prompt, char_to_ix)
         generated = model.generate(
             start_indices=start_idx,
-            max_len=line_max_len,
+            max_len=len(prompt) + line_max_len,
             temperature=temperature,
         )
         decoded = decode_indices(generated, ix_to_char)
-        if "\n" in decoded:
-            decoded = decoded.split("\n", maxsplit=1)[0]
-        lines.append(decoded)
+        suffix = (
+            decoded[len(accumulated) :] if len(decoded) > len(accumulated) else char
+        )
+        suffix = truncate_sentence(suffix)
+        lines.append(suffix)
+        accumulated += suffix
     return "\n".join(lines)
 
 

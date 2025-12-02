@@ -16,7 +16,7 @@ module:
   unk_token: ${data.unk_token}
 samples:
   prompts:
-    - "冬"
-    - "华夏"
+    - "冬:"
+    - "中国:"
   max_len: 96
   temperature: 0.9

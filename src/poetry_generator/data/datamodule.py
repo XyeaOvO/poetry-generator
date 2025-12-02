@@ -11,15 +11,19 @@ from torch.utils.data import DataLoader, Dataset
 
 
 def _split_poems(lines: Iterable[str]) -> list[str]:
-    """Treat each non-empty line as a standalone poem, dropping lines with '_'."""
+    """Return cleaned poem bodies, dropping titles/colon prefixes and tiny lines."""
     poems: list[str] = []
     for line in lines:
         stripped = line.strip()
-        if not stripped:
+        if not stripped:  # skip blank
             continue
-        if "_" in stripped:
+        if "_" in stripped:  # skip noise markers
             continue
-        poems.append(stripped)
+        # Remove leading title (if present) and ignore empty or tiny bodies.
+        body = stripped.split(":", 1)[-1].strip()
+        if not body or len(body) < 8:
+            continue
+        poems.append(body)
     return poems
 
 
