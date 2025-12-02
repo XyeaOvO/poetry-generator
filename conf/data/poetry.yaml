@@ -9,4 +9,4 @@ min_char_freq: 3
 bos_token: "<bos>"
 eos_token: "<eos>"
 pad_token: "<pad>"
-unk_token: "�"
+unk_token: "<unk>"

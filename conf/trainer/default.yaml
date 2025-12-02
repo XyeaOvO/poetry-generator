@@ -1,4 +1,4 @@
-max_epochs: 20
+max_epochs: 10
 accelerator: auto
 devices: auto
 strategy: auto
@@ -7,7 +7,7 @@ precision: 32-true
 sync_batchnorm: True
 benchmark: True
 accumulate_grad_batches: 1
-# gradient_clip_val: 1.0
+gradient_clip_val: 1.0
 
 num_sanity_val_steps: 0
 val_check_interval: 1.0

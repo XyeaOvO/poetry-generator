@@ -93,7 +93,7 @@ class PoetryDataModule(pl.LightningDataModule):
         bos_token: str = "<bos>",
         eos_token: str = "<eos>",
         pad_token: str = "<pad>",
-        unk_token: str = "�",
+        unk_token: str = "<unk>",
     ) -> None:
         super().__init__()
         if batch_size <= 0:

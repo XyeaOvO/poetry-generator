@@ -121,6 +121,10 @@ class PoetryLightningModel(pl.LightningModule):
         if scheduler_name in {"", "none"}:
             return optimizer
 
+        scheduler_cfg = dict(scheduler_cfg)
+        if scheduler_name in {"cosine", "cosineannealing", "cosine_annealing"}:
+            scheduler_cfg = self._maybe_expand_cosine_t_max(scheduler_cfg)
+
         scheduler = self._build_scheduler(
             optimizer=optimizer,
             scheduler_name=scheduler_name,
@@ -308,12 +312,6 @@ class PoetryLightningModel(pl.LightningModule):
             candidates = ["<pad>", "<unk>", "<bos>"]
             if unk_token:
                 candidates.append(unk_token)
-            unk_guess = next(
-                (token for token in ("�", "[UNK]") if token in char_to_ix),
-                None,
-            )
-            if unk_guess:
-                candidates.append(unk_guess)
 
             for token in candidates:
                 idx = char_to_ix.get(token)
@@ -423,6 +421,34 @@ class PoetryLightningModel(pl.LightningModule):
             filtered = torch.full_like(filtered, -torch.inf)
             filtered.scatter_(dim=-1, index=sorted_indices, src=sorted_logits)
         return filtered
+
+    def _maybe_expand_cosine_t_max(
+        self,
+        scheduler_cfg: Dict[str, object],
+    ) -> Dict[str, object]:
+        """When using step-based cosine decay, set T_max to total training steps."""
+        interval = scheduler_cfg.get("interval", "epoch")
+        if str(interval).lower() != "step":
+            return scheduler_cfg
+
+        params = dict(scheduler_cfg.get("params") or {})
+        t_max = params.get("T_max")
+        if t_max is not None and isinstance(t_max, (int, float)) and t_max > 0:
+            return {**scheduler_cfg, "params": params}
+
+        trainer = getattr(self, "trainer", None)
+        total_steps = None
+        if trainer is not None:
+            total_steps = getattr(trainer, "estimated_stepping_batches", None)
+            if total_steps is None:
+                total_steps = getattr(trainer, "num_training_batches", None)
+
+        if total_steps is None:
+            # Fallback to avoid zero/None; user can override via config.
+            total_steps = 1000
+
+        params["T_max"] = int(total_steps)
+        return {**scheduler_cfg, "params": params}
 
     def _build_scheduler(
         self,
