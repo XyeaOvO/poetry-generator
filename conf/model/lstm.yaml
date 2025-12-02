@@ -7,10 +7,10 @@ module:
   n_layers: 3
   learning_rate: 0.001
   weight_decay: 0.0
-  label_smoothing: 0.05
-  embedding_dropout: 0.2
-  rnn_dropout: 0.3
-  output_dropout: 0.2
+  label_smoothing: 0.0
+  embedding_dropout: 0
+  rnn_dropout: 0
+  output_dropout: 0
   layer_norm: true
   tie_weights: true
   unk_token: ${data.unk_token}
