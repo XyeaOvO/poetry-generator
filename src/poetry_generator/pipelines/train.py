@@ -21,7 +21,6 @@ torch.load = _force_unsafe_load
 @hydra.main(config_path="../../../conf", config_name="config.yaml", version_base=None)
 def main(cfg: DictConfig) -> None:
     pl.seed_everything(42, workers=True)
-    torch.set_float32_matmul_precision("medium")
 
     abs_data_path = to_absolute_path(str(cfg.data.data_path))
     data_module = instantiate(cfg.data, data_path=abs_data_path)
@@ -47,7 +46,6 @@ def main(cfg: DictConfig) -> None:
         pad_idx=pad_idx,
         unk_token=getattr(cfg.data, "unk_token", None),
     )
-    model = torch.compile(model, mode="max-autotune")
 
     wandb_logger = instantiate(cfg.logger)
 
