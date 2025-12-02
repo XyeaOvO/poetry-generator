@@ -31,6 +31,14 @@ def decode_indices(indices: List[int], ix_to_char: Dict[int, str]) -> str:
     return "".join(chars)
 
 
+def remove_leading_bos(indices: List[int], bos_idx: int | None) -> List[int]:
+    if bos_idx is None or not indices:
+        return indices
+    if indices[0] == bos_idx:
+        return indices[1:]
+    return indices
+
+
 def truncate_sentence(text: str) -> str:
     """Return text cut at the first sentence-ending punctuation (if any)."""
     for sep in ("。", "！", "？", ".", "!", "?", "\n"):
@@ -48,13 +56,17 @@ def generate_from_prompt(
     max_len: int,
     temperature: float,
 ) -> str:
+    bos_idx = char_to_ix.get("<bos>")
     start_indices = encode_text(prompt, char_to_ix)
+    if bos_idx is not None:
+        start_indices = [bos_idx] + start_indices
     generated = model.generate(
         start_indices=start_indices,
         max_len=max_len,
         temperature=temperature,
     )
-    return decode_indices(generated, ix_to_char)
+    cleaned = remove_leading_bos(generated, bos_idx)
+    return decode_indices(cleaned, ix_to_char)
 
 
 def generate_acrostic(
@@ -67,17 +79,21 @@ def generate_acrostic(
 ) -> str:
     lines = []
     accumulated = ""
+    bos_idx = char_to_ix.get("<bos>")
     for char in head:
         if char not in char_to_ix:
             raise KeyError(f"Head character '{char}' not found in vocabulary")
         prompt = accumulated + char
         start_idx = encode_text(prompt, char_to_ix)
+        if bos_idx is not None:
+            start_idx = [bos_idx] + start_idx
         generated = model.generate(
             start_indices=start_idx,
             max_len=len(prompt) + line_max_len,
             temperature=temperature,
         )
-        decoded = decode_indices(generated, ix_to_char)
+        cleaned = remove_leading_bos(generated, bos_idx)
+        decoded = decode_indices(cleaned, ix_to_char)
         suffix = (
             decoded[len(accumulated) :] if len(decoded) > len(accumulated) else char
         )

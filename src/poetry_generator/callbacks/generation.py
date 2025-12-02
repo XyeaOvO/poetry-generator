@@ -237,6 +237,12 @@ class LogGenerationSamplesCallback(pl.Callback):
         except KeyError as exc:
             return f"Generation skipped: {exc}"
 
+        bos_idx = None
+        if hasattr(pl_module, "char_to_ix"):
+            bos_idx = pl_module.char_to_ix.get("<bos>")
+            if bos_idx is not None:
+                indices = [bos_idx] + indices
+
         try:
             sample_indices = pl_module.generate(
                 start_indices=indices,
@@ -244,7 +250,10 @@ class LogGenerationSamplesCallback(pl.Callback):
                 temperature=temperature,
                 eos_idx=eos_idx,
             )
-            return self._decode_indices(sample_indices, pl_module.idx_to_char)
+            cleaned = sample_indices
+            if bos_idx is not None and cleaned and cleaned[0] == bos_idx:
+                cleaned = cleaned[1:]
+            return self._decode_indices(cleaned, pl_module.idx_to_char)
         except Exception:  # pragma: no cover - unexpected failure should raise
             tb = traceback.format_exc()
             pl_module.print(
