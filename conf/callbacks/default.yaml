@@ -8,7 +8,7 @@
   acrostic_line_len: 48
   long_prompts:
     - "春江花月夜"
-  long_max_len: 800
+  long_max_len: 2000
   max_len: ${model.samples.max_len}
   temperature: ${model.samples.temperature}
 - _target_: pytorch_lightning.callbacks.ModelCheckpoint
@@ -19,5 +19,5 @@
   save_top_k: 1
   save_last: true
 - _target_: pytorch_lightning.callbacks.LearningRateMonitor
-  logging_interval: epoch
+  logging_interval: step
   log_momentum: False

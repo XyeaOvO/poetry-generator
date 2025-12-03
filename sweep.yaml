@@ -1,5 +1,5 @@
 program: scripts/wandb_hydra_wrapper.py
-name: Test
+name: Final
 project: poetry-generator
 method: bayes
 metric:
@@ -17,7 +17,7 @@ parameters:
       weight_decay:
         distribution: log_uniform_values
         min: 1.0e-6
-        max: 1.0e-2
+        max: 1.0e-3
       embedding_dim:
         values: [128, 256, 512]
       hidden_dim:
@@ -27,9 +27,11 @@ parameters:
   data:
     parameters:
       seq_length:
-        values: [48, 64, 96]
+        values: [48, 96, 128]
+      batch_size:
+        values: [32, 128, 512]
 
 early_terminate:
   type: hyperband
-  min_iter: 2
+  min_iter: 1
   eta: 3

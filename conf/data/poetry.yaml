@@ -1,11 +1,11 @@
 _target_: poetry_generator.data.PoetryDataModule
 data_path: "data/poetry.txt"
 batch_size: 128
-seq_length: 48
+seq_length: 96
 val_split: 0.05
 test_split: 0.05
-max_vocab_size: 5000
-min_char_freq: 3
+max_vocab_size: 4000
+min_char_freq: 10
 bos_token: "<bos>"
 eos_token: "<eos>"
 pad_token: "<pad>"

@@ -17,10 +17,13 @@ def _split_poems(lines: Iterable[str]) -> list[str]:
         stripped = line.strip()
         if not stripped:  # skip blank
             continue
-        if "_" in stripped:  # skip noise markers
-            continue
         # Remove leading title (if present) and ignore empty or tiny bodies.
         body = stripped.split(":", 1)[-1].strip()
+        if any(
+            marker in body
+            for marker in ["_", "《", "》", "【", "】", "（", "）", "(", ")"]
+        ):
+            continue
         if not body or len(body) < 8:
             continue
         poems.append(body)
